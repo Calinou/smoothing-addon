@@ -7,7 +7,6 @@ func _enter_tree():
 	# Add the new type with a name, a parent type, a script and an icon
 	add_custom_type("Smoothing", "Spatial", preload("smoothing.gd"), preload("smoothing.png"))
 	add_custom_type("Smoothing2D", "Node2D", preload("smoothing_2d.gd"), preload("smoothing_2d.png"))
-	pass
 
 
 func _exit_tree():

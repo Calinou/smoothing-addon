@@ -39,34 +39,34 @@ export (int, FLAGS, "enabled", "translate", "basis", "slerp") var flags: int = S
 ##########################################################################################
 # USER FUNCS
 
-
-# call this on e.g. starting a level, AFTER moving the target
-# so we can update both the previous and current values
-func teleport():
+# Call this on e.g. starting a level, AFTER moving the target
+# so we can update both the previous and current values.
+func teleport() -> void:
 	var temp_flags = flags
-	_SetFlags(SF_TRANSLATE | SF_BASIS)
+	flags |= SF_TRANSLATE | SF_BASIS
 
-	_RefreshTransform()
+	_refresh_transform()
 	_m_trPrev = _m_trCurr
 
-	# do one frame update to make sure all components are updated
+	# Do one frame update to make sure all components are updated.
 	_process(0)
 
-	# resume old flags
+	# Resume old flags.
 	flags = temp_flags
 
 
-func set_enabled(bEnable: bool):
-	_ChangeFlags(SF_ENABLED, bEnable)
-	_SetProcessing()
+func set_enabled(p_enable: bool):
+	if p_enable:
+		flags |= SF_ENABLED
+	else:
+		flags &= ~SF_ENABLED
+	_set_processing()
 
 
-func is_enabled():
-	return _TestFlags(SF_ENABLED)
-
+func is_enabled() -> bool:
+	return (flags & SF_ENABLED) == SF_ENABLED
 
 ##########################################################################################
-
 
 func _ready():
 	_m_trCurr = Transform()
@@ -76,7 +76,7 @@ func _ready():
 func set_target(new_value):
 	target = new_value
 	if is_inside_tree():
-		_FindTarget()
+		_find_target()
 
 
 func get_target():
@@ -85,97 +85,97 @@ func get_target():
 
 func _set_flags(new_value):
 	flags = new_value
-	# we may have enabled or disabled
-	_SetProcessing()
+	# We may have enabled or disabled.
+	_set_processing()
 
 
 func _get_flags():
 	return flags
 
 
-func _SetProcessing():
-	var bEnable = _TestFlags(SF_ENABLED)
-	if _TestFlags(SF_INVISIBLE):
+func _set_processing():
+	var bEnable := (flags & SF_ENABLED) == SF_ENABLED
+	if (flags & SF_INVISIBLE) == SF_INVISIBLE:
 		bEnable = false
 
 	set_process(bEnable)
 	set_physics_process(bEnable)
-	pass
 
 
 func _enter_tree():
-	# might have been moved
-	_FindTarget()
-	pass
+	# The node might have been moved.
+	_find_target()
 
 
-func _notification(what):
+func _notification(what: int) -> void:
 	match what:
-		# invisible turns off processing
+		# Invisible turns off processing.
 		NOTIFICATION_VISIBILITY_CHANGED:
-			_ChangeFlags(SF_INVISIBLE, is_visible_in_tree() == false)
-			_SetProcessing()
+			if is_visible_in_tree():
+				flags &= ~SF_INVISIBLE
+			else:
+				flags |= SF_INVISIBLE
+
+			_set_processing()
 
 
-func _RefreshTransform():
-	_ClearFlags(SF_DIRTY)
+func _refresh_transform() -> void:
+	flags &= ~SF_DIRTY
 
-	if _HasTarget() == false:
+	if not _has_target():
 		return
 
 	_m_trPrev = _m_trCurr
 	_m_trCurr = _m_Target.transform
 
 
-func _IsTargetParent(node):
+func _IsTargetParent(node: Node) -> bool:
 	if node == _m_Target:
-		return true  # disallow
+		return true   # Disallow.
 
-	var parent = node.get_parent()
+	var parent: Node = node.get_parent()
 	if parent:
 		return _IsTargetParent(parent)
 
 	return false
 
 
-func _FindTarget():
+func _find_target():
 	_m_Target = null
 	if target.is_empty():
 		return
 
-	var targ = get_node(target)
+	var targ := get_node(target)
 
-	if ! targ:
-		printerr("ERROR SmoothingNode : Target " + target + " not found")
+	if not targ:
+		push_error("SmoothingNode : Target " + target + " not found")
 		return
 
 	if not targ is Spatial:
-		printerr("ERROR SmoothingNode : Target " + target + " is not spatial")
+		push_error("SmoothingNode : Target " + target + " is not inheriting Spatial")
 		target = ""
 		return
 
-	# if we got to here targ is a spatial
+	# If we got to here, `targ` is a Spatial.
 	_m_Target = targ
 
-	# do a final check
-	# is the target a parent or grandparent of the smoothing node?
-	# if so, disallow
+	# Do a final check.
+	# Is the target a parent or grandparent of the smoothing node?
+	# Ff so, disallow.
 	if _IsTargetParent(self):
-		var msg = _m_Target.get_name() + " assigned to " + self.get_name() + "]"
-		printerr("ERROR SmoothingNode : Target should not be a parent or grandparent [", msg)
+		var msg := _m_Target.get_name() + " assigned to " + self.get_name() + "]"
+		push_error("SmoothingNode : Target should not be a parent or grandparent [" + msg)
 
-		# error message
-		#OS.alert("Target cannot be a parent or grandparent in the scene tree.", "SmoothingNode")
 		_m_Target = null
 		target = ""
 		return
 
 
-func _HasTarget() -> bool:
+func _has_target() -> bool:
 	if _m_Target == null:
 		return false
 
-	# has not been deleted?
+	# Has not been deleted?
 	if is_instance_valid(_m_Target):
 		return true
 
@@ -183,63 +183,37 @@ func _HasTarget() -> bool:
 	return false
 
 
-func _process(_delta):
-	if _TestFlags(SF_DIRTY):
-		_RefreshTransform()
+func _process(_delta: float) -> void:
+	if (flags & SF_DIRTY) == SF_DIRTY:
+		_refresh_transform()
 
 	var f = Engine.get_physics_interpolation_fraction()
 
 	var tr: Transform = Transform()
 
 	# translate
-	if _TestFlags(SF_TRANSLATE):
+	if (flags & SF_TRANSLATE) == SF_TRANSLATE:
 		var ptDiff = _m_trCurr.origin - _m_trPrev.origin
 		tr.origin = _m_trPrev.origin + (ptDiff * f)
 
 	# rotate
-	if _TestFlags(SF_BASIS):
-		if _TestFlags(SF_SLERP):
+	if (flags & SF_BASIS) == SF_BASIS:
+		if (flags & SF_SLERP) == SF_SLERP:
 			tr.basis = _m_trPrev.basis.slerp(_m_trCurr.basis, f)
 		else:
-			tr.basis = _LerpBasis(_m_trPrev.basis, _m_trCurr.basis, f)
+			var res := Basis()
+			res.x = _m_trPrev.basis.x.linear_interpolate(_m_trCurr.basis.x, f)
+			res.y = _m_trPrev.basis.y.linear_interpolate(_m_trCurr.basis.y, f)
+			res.z = _m_trPrev.basis.z.linear_interpolate(_m_trCurr.basis.z, f)
+			tr.basis = res
 
 	transform = tr
 
-	pass
 
+func _physics_process(_delta: float) -> void:
+	# Take care of the special case where multiple physics ticks
+	# occur before a frame... the data must flow!
+	if (flags & SF_DIRTY) == SF_DIRTY:
+		_refresh_transform()
 
-func _physics_process(_delta):
-	# take care of the special case where multiple physics ticks
-	# occur before a frame .. the data must flow!
-	if _TestFlags(SF_DIRTY):
-		_RefreshTransform()
-
-	_SetFlags(SF_DIRTY)
-	pass
-
-
-func _LerpBasis(from: Basis, to: Basis, f: float) -> Basis:
-	var res: Basis = Basis()
-	res.x = from.x.linear_interpolate(to.x, f)
-	res.y = from.y.linear_interpolate(to.y, f)
-	res.z = from.z.linear_interpolate(to.z, f)
-	return res
-
-
-func _SetFlags(f):
-	flags |= f
-
-
-func _ClearFlags(f):
-	flags &= ~f
-
-
-func _TestFlags(f):
-	return (flags & f) == f
-
-
-func _ChangeFlags(f, bSet):
-	if bSet:
-		_SetFlags(f)
-	else:
-		_ClearFlags(f)
+	flags |= SF_DIRTY
